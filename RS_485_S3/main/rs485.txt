@@ -1,0 +1,155 @@
+#include <stdio.h>
+#include <string.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include "driver/uart.h"
+#include "driver/gpio.h"
+
+#include "esp_err.h"
+
+#define UART_PORT      UART_NUM_1
+
+/* Change these pins if required */
+#define UART_TX_PIN    GPIO_NUM_4
+#define UART_RX_PIN    GPIO_NUM_5
+
+#define UART2_PORT      UART_NUM_2
+#define UART2_TX_PIN    GPIO_NUM_6
+#define UART2_RX_PIN    GPIO_NUM_7
+
+#define BUF_SIZE       128
+
+void forward_to_c6(uint8_t *data, int len);
+
+void app_main(void)
+{
+    esp_err_t ret;
+
+    printf("\n");
+    printf("=====================================\n");
+    printf(" ESP32 RS485 Receiver Started\n");
+    printf("=====================================\n");
+
+    uart_config_t uart_config =
+    {
+        .baud_rate = 115200,
+        .data_bits = UART_DATA_8_BITS,
+        .parity = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT
+    };
+
+    /* Install UART driver */
+    ret = uart_driver_install(UART_PORT,
+                              BUF_SIZE * 2,
+                              0,
+                              0,
+                              NULL,
+                              0);
+
+    printf("uart_driver_install() : %s\n",
+            esp_err_to_name(ret));
+
+    /* Configure UART */
+    ret = uart_param_config(UART_PORT,
+                            &uart_config);
+
+    printf("uart_param_config()   : %s\n",
+            esp_err_to_name(ret));
+
+    /* Assign UART pins */
+    ret = uart_set_pin(UART_PORT,
+                       UART_TX_PIN,
+                       UART_RX_PIN,
+                       UART_PIN_NO_CHANGE,
+                       UART_PIN_NO_CHANGE);
+
+    printf("uart_set_pin()        : %s\n",
+            esp_err_to_name(ret));
+
+
+    /*************************************************************/
+/*                 UART2 INITIALIZATION                      */
+/*************************************************************/
+
+uart_config_t uart2_config =
+{
+    .baud_rate = 115200,
+    .data_bits = UART_DATA_8_BITS,
+    .parity    = UART_PARITY_DISABLE,
+    .stop_bits = UART_STOP_BITS_1,
+    .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+    .source_clk = UART_SCLK_DEFAULT
+};
+
+ret = uart_driver_install(UART2_PORT,
+                          BUF_SIZE * 2,
+                          0,
+                          0,
+                          NULL,
+                          0);
+
+printf("uart2_driver_install(): %s\n",
+       esp_err_to_name(ret));
+
+ret = uart_param_config(UART2_PORT,
+                        &uart2_config);
+
+printf("uart2_param_config() : %s\n",
+       esp_err_to_name(ret));
+
+ret = uart_set_pin(UART2_PORT,
+                   UART2_TX_PIN,
+                   UART2_RX_PIN,
+                   UART_PIN_NO_CHANGE,
+                   UART_PIN_NO_CHANGE);
+
+printf("uart2_set_pin()      : %s\n",
+       esp_err_to_name(ret));
+
+/*************************************************************/
+
+    printf("-------------------------------------\n");
+    printf("Waiting for RS485 data...\n");
+    printf("-------------------------------------\n");
+
+    uint8_t data[BUF_SIZE];
+
+    while (1)
+    {
+        memset(data, 0, sizeof(data));
+
+        int len = uart_read_bytes(UART_PORT,
+                                  data,
+                                  BUF_SIZE - 1,
+                                  pdMS_TO_TICKS(1000));
+
+        printf("Bytes Received = %d\n", len);
+
+        if (len > 0)
+        {
+            data[len] = '\0';
+
+            printf("Message : %s\n", data);
+	    forward_to_c6(data, len);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+}
+
+void forward_to_c6(uint8_t *data, int len)
+{
+    uart_write_bytes(UART2_PORT,
+                     (const char *)data,
+                     len);
+
+    uart_wait_tx_done(UART2_PORT,
+                      pdMS_TO_TICKS(100));
+
+    printf("Forwarded %d bytes to ESP32-C6\n", len);
+}
